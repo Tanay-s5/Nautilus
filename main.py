@@ -11,8 +11,8 @@ from sentence_transformers import SentenceTransformer
 import torch
 import numpy as np
 
-from openai import OpenAI
-
+from openai import OpenAI, RateLimitError, AuthenticationError, PermissionDeniedError
+from fastapi.middleware.cors import CORSMiddleware
 
 
 # ENV 
@@ -24,7 +24,7 @@ if not api_key:
 
 
 client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
+    api_key=api_key,
     base_url="https://api.groq.com/openai/v1"
 )
 
@@ -63,18 +63,27 @@ def cosine_similarity(a, b):
     b = np.array(b)
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-def compute_similarity(e1, e2):
-    return (
-        0.25 * cosine_similarity(e1["corePrinciples"], e2["corePrinciples"]) +
-        0.25 * cosine_similarity(e1["mechanism"], e2["mechanism"]) +
-        0.15 * cosine_similarity(e1["formalStructure"], e2["formalStructure"]) +
-        0.10 * cosine_similarity(e1["problemPatterns"], e2["problemPatterns"]) +
-        0.10 * cosine_similarity(e1["applications"], e2["applications"]) +
-        0.05 * cosine_similarity(e1["constraints"], e2["constraints"]) +
-        0.04 * cosine_similarity(e1["examples"], e2["examples"]) +
-        0.03 * cosine_similarity(e1["misconceptions"], e2["misconceptions"]) +
-        0.03 * cosine_similarity(e1["analogy"], e2["analogy"])
+WEIGHTS: Dict[str, float] = {
+    "corePrinciples": 0.25,
+    "mechanism": 0.25,
+    "formalStructure": 0.15,
+    "problemPatterns": 0.10,
+    "applications": 0.10,
+    "constraints": 0.05,
+    "examples": 0.04,
+    "misconceptions": 0.03,
+    "analogy": 0.03,
+}
+
+def compute_similarity(e1, e2) -> float:
+    total_weight = sum(WEIGHTS.values()) or 1.0
+    score = sum(
+        weight * cosine_similarity(e1[field], e2[field])
+        for field, weight in WEIGHTS.items()
     )
+    return float(score / total_weight)
+
+LINK_THRESHOLD = 0.5
 
 DB_FILE = "cards.json"
 
