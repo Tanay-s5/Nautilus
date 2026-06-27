@@ -75,6 +75,9 @@ WEIGHTS: Dict[str, float] = {
     "analogy": 0.03,
 }
 
+
+LINK_THRESHOLD = 0.1
+
 def compute_similarity(e1, e2) -> float:
     total_weight = sum(WEIGHTS.values()) or 1.0
     score = sum(
@@ -83,21 +86,24 @@ def compute_similarity(e1, e2) -> float:
     )
     return float(score / total_weight)
 
-LINK_THRESHOLD = 0.5
 
 DB_FILE = "cards.json"
 
+cards: List[Dict[str, Any]] = []
+next_id: int = 0
+
 def load_cards():
-    global cards
+    global cards,next_id
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             cards = json.load(f)
+    next_id=max((c["id"] for c in cards),default=-1)+1
 
 def save_cards():
     with open(DB_FILE, "w") as f:
         json.dump(cards, f ,indent=2)
 
-cards = []
+
 load_cards()
 
 
@@ -130,11 +136,19 @@ class Card(BaseModel):
     problemPatterns: str
     formalStructure: List[str]
 
+class CardLink(BaseModel):
+    id: int
+    title: str
+    score: float
+
 class StoredCard(BaseModel):
     id: int
     data: Card
+    links: List[CardLink] = []
 
-# ------------------ PROMPT BUILDER ------------------
+
+
+# PROMPT stored
 def build_prompt(user_prompt: str):
     return f"""
 You must return ONLY valid JSON. No explanation. No markdown.
@@ -177,9 +191,10 @@ Topic: {user_prompt}
 """
 
 
-# ------------------ ENDPOINT ------------------
+#  ENDPOINT 
 @app.post("/generate-card", response_model=StoredCard)
 def generate_card(req: PromptRequest):
+    global next_id 
 
     prompt = build_prompt(req.prompt)
 
@@ -189,20 +204,22 @@ def generate_card(req: PromptRequest):
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2
+            temperature=0.2,
+            max_tokens=500,
+            response_format={"type": "json_object"}
         )
 
         text = response.choices[0].message.content.strip()
     except Exception as e:
         print("RAW ERROR:", repr(e))
         error_str = str(e)
-        # Check for rate limit errors
+        # rate limit errors
         if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded. Please retry in ~50 seconds. Consider enabling billing for higher limits."
             )
-        # Check for auth errors
+        # auth errors
         elif "PERMISSION_DENIED" in error_str or "403" in error_str:
             raise HTTPException(
                 status_code=403,
@@ -232,23 +249,28 @@ def generate_card(req: PromptRequest):
 
     embeddings = embed_card_fields(card.dict())
 
-    card_id = len(cards)
+    card_id = next_id
+    next_id += 1
 
-    for i in cards:
-        if i["id"] == card_id:
-            continue
-
-        score = compute_similarity(
-            embeddings,
-            i["embeddings"]
-        )
-
-        print(f"New card {card_id} vs card {i['id']} ({i['data']['title']}) → {score}")
+    links: List[Dict[str, Any]] = []
+    for existing in cards:
+        score = compute_similarity(embeddings, existing["embeddings"])
+        print(f"Card {existing['id']} ({existing['data']['title']}) v/s New card {card_id} -> {score}")
+        print(f"link threshold- {LINK_THRESHOLD}")
+        if score > LINK_THRESHOLD:
+            print("Link is adding yoooo!!!!")
+            links.append({
+                "id": existing["id"],
+                "title": existing["data"]["title"],
+                "score": score,
+            })
+    links.sort(key=lambda l: l["score"], reverse=True)
 
     stored_card = {
     "id": card_id,
     "data": card.dict(),
-    "embeddings": embeddings
+    "embeddings": embeddings,
+    "links": links
     }
 
     cards.append(stored_card)
@@ -259,16 +281,31 @@ def generate_card(req: PromptRequest):
 
 
     
-@app.get("/cards")
+@app.get("/cards",response_model=List[StoredCard])
 def get_cards():
     return cards
 
+@app.get("/card/{card_id}", response_model=StoredCard)
+def get_card(card_id: int):
+    for c in cards:
+        if c["id"] == card_id:
+            return c
+    raise HTTPException(status_code=404, detail=f"Card {card_id} not found")
+    
+@app.delete("/card/{card_id}")
+def delete_card(card_id: int):
+    for c in cards:
+        if c["id"] == card_id:
+            cards.remove(c)
+            save_cards()
+            return {"message": f"Card {card_id} deleted"}
+    raise HTTPException(status_code=404, detail=f"Card {card_id} not found")
+
 @app.delete("/cards")
 def delete_all_cards():
-    global cards
-    cards = []       
-    save_cards()     
+    global cards, next_id
+    cards = []
+    next_id = 0
+    save_cards()
     return {"message": "All cards deleted"}
-    
-
 
