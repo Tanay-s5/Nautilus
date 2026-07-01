@@ -2,8 +2,15 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-DB_FILE = "cards.json"
-LINKS_FILE = "links.json"
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR / "data"
+
+
+DB_FILE = DATA_DIR / "cards.json"
+LINKS_FILE = DATA_DIR / "links.json"
+
 
 cards: List[Dict[str, Any]] = []
 next_id: int = 0

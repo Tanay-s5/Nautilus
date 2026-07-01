@@ -1,0 +1,65 @@
+[
+  {
+    "lid": "0 <-> 1",
+    "similarity": 0.1118068264312092,
+    "top3_fields": [
+      "corePrinciples",
+      "constraints",
+      "formalStructure"
+    ]
+  },
+  {
+    "lid": "0 <-> 2",
+    "similarity": 0.35082181715643773,
+    "top3_fields": [
+      "corePrinciples",
+      "mechanism",
+      "formalStructure"
+    ]
+  },
+  {
+    "lid": "1 <-> 2",
+    "similarity": 0.16777031716807744,
+    "top3_fields": [
+      "corePrinciples",
+      "problemPatterns",
+      "formalStructure"
+    ]
+  },
+  {
+    "lid": "2 <-> 3",
+    "similarity": 0.18285482332718295,
+    "top3_fields": [
+      "constraints",
+      "mechanism",
+      "corePrinciples"
+    ]
+  },
+  {
+    "lid": "0 <-> 3",
+    "similarity": 0.18101456024492726,
+    "top3_fields": [
+      "corePrinciples",
+      "mechanism",
+      "applications"
+    ]
+  },
+  {
+    "lid": "1 <-> 3",
+    "similarity": 0.1303770166969933,
+    "top3_fields": [
+      "corePrinciples",
+      "problemPatterns",
+      "applications"
+    ]
+  },
+  {
+    "lid": "4 <-> 5",
+    "similarity": 0.4809230260019662,
+    "top3_fields": [
+      "mechanism",
+      "corePrinciples",
+      "problemPatterns"
+    ]
+  }
+]
