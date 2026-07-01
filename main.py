@@ -4,20 +4,27 @@ from fastapi import FastAPI, HTTPException
 
 from database import (
     add_card,
+    add_links,
     clear_cards,
     get_all_cards,
+    get_all_links,
     get_card_by_id,
     get_next_id,
     remove_card,
 )
-from embedding import LINK_THRESHOLD, compute_similarity, embed_card_fields
+from embedding import (
+    LINK_THRESHOLD,
+    compute_similarity,
+    embed_card_fields,
+    top_contributing_fields,
+)
 from llm import generate_card_data
-from validation import Card, PromptRequest, StoredCard
+from validation import Card, GenerateCardResponse, LinkRecord, PromptRequest, StoredCard
 
 app = FastAPI()
 
 
-@app.post("/generate-card", response_model=StoredCard)
+@app.post("/generate-card", response_model=GenerateCardResponse)
 def generate_card(req: PromptRequest):
     data = generate_card_data(req.prompt)
     card = Card(**data)
@@ -25,35 +32,41 @@ def generate_card(req: PromptRequest):
     embeddings = embed_card_fields(card.dict())
     card_id = get_next_id()
 
-    links: List[Dict[str, Any]] = []
+    new_links: List[Dict[str, Any]] = []
     for existing in get_all_cards():
         score = compute_similarity(embeddings, existing["embeddings"])
         print(f"Card {existing['id']} ({existing['data']['title']}) v/s New card {card_id} -> {score}")
-        print(f"link threshold- {LINK_THRESHOLD}")
         if score > LINK_THRESHOLD:
-            print("Link is adding yoooo!!!!")
-            links.append({
-                "id": existing["id"],
-                "title": existing["data"]["title"],
-                "score": score,
+            top_fields = top_contributing_fields(embeddings, existing["embeddings"])
+            new_links.append({
+                "lid": f"{existing['id']} <-> {card_id}",
+                "similarity": score,
+                "top3_fields": top_fields,
             })
-    links.sort(key=lambda l: l["score"], reverse=True)
+    new_links.sort(key=lambda l: l["similarity"], reverse=True)
+
+    if new_links:
+        add_links(new_links)
 
     stored_card = {
         "id": card_id,
         "data": card.dict(),
         "embeddings": embeddings,
-        "links": links
     }
 
     add_card(stored_card)
 
-    return stored_card
+    return {"card": stored_card, "links": new_links}
 
 
 @app.get("/cards", response_model=List[StoredCard])
 def get_cards():
     return get_all_cards()
+
+
+@app.get("/links", response_model=List[LinkRecord])
+def get_links():
+    return get_all_links()
 
 
 @app.get("/card/{card_id}", response_model=StoredCard)

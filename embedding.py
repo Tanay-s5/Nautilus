@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 import torch
@@ -62,3 +62,11 @@ def compute_similarity(e1: dict, e2: dict) -> float:
         for field, weight in WEIGHTS.items()
     )
     return float(score / total_weight)
+
+
+def top_contributing_fields(e1: dict, e2: dict, n: int = 3) -> List[str]:
+    contributions = {
+        field: weight * cosine_similarity(e1[field], e2[field])
+        for field, weight in WEIGHTS.items()
+    }
+    return sorted(contributions, key=contributions.get, reverse=True)[:n]

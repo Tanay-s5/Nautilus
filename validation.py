@@ -28,13 +28,17 @@ class Card(BaseModel):
     formalStructure: List[str]
 
 
-class CardLink(BaseModel):
-    id: int
-    title: str
-    score: float
-
-
 class StoredCard(BaseModel):
     id: int
     data: Card
-    links: List[CardLink] = []
+
+
+class LinkRecord(BaseModel):
+    lid: str
+    similarity: float
+    top3_fields: List[str]
+
+
+class GenerateCardResponse(BaseModel):
+    card: StoredCard
+    links: List[LinkRecord]
