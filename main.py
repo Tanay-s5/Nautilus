@@ -18,7 +18,7 @@ from embedding import (
     embed_card_fields,
     top_contributing_fields,
 )
-from llm import generate_card_data
+from llm import generate_card_data, generate_link_reason
 from validation import Card, GenerateCardResponse, LinkRecord, PromptRequest, StoredCard
 
 app = FastAPI()
@@ -28,8 +28,9 @@ app = FastAPI()
 def generate_card(req: PromptRequest):
     data = generate_card_data(req.prompt)
     card = Card(**data)
+    card_data = card.dict()
 
-    embeddings = embed_card_fields(card.dict())
+    embeddings = embed_card_fields(card_data)
     card_id = get_next_id()
 
     new_links: List[Dict[str, Any]] = []
@@ -38,10 +39,12 @@ def generate_card(req: PromptRequest):
         print(f"Card {existing['id']} ({existing['data']['title']}) v/s New card {card_id} -> {score}")
         if score > LINK_THRESHOLD:
             top_fields = top_contributing_fields(embeddings, existing["embeddings"])
+            reason = generate_link_reason(existing["data"], card_data, top_fields)
             new_links.append({
                 "lid": f"{existing['id']} <-> {card_id}",
                 "similarity": score,
                 "top3_fields": top_fields,
+                "reason": reason,
             })
     new_links.sort(key=lambda l: l["similarity"], reverse=True)
 
@@ -50,7 +53,7 @@ def generate_card(req: PromptRequest):
 
     stored_card = {
         "id": card_id,
-        "data": card.dict(),
+        "data": card_data,
         "embeddings": embeddings,
     }
 

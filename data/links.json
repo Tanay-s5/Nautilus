@@ -1,65 +1,102 @@
 [
   {
     "lid": "0 <-> 1",
-    "similarity": 0.1118068264312092,
+    "similarity": 0.6382427957736106,
     "top3_fields": [
-      "corePrinciples",
-      "constraints",
-      "formalStructure"
-    ]
-  },
-  {
-    "lid": "0 <-> 2",
-    "similarity": 0.35082181715643773,
-    "top3_fields": [
-      "corePrinciples",
       "mechanism",
+      "corePrinciples",
       "formalStructure"
-    ]
+    ],
+    "reason": "Card A and Card B are connected through their shared discussion of thermodynamic efficiency, energy conversion, and the linear relationship between fuel flow and power output, highlighting the fundamental principles of internal combustion engines."
   },
   {
     "lid": "1 <-> 2",
-    "similarity": 0.16777031716807744,
+    "similarity": 0.2713035575936444,
     "top3_fields": [
-      "corePrinciples",
       "problemPatterns",
-      "formalStructure"
-    ]
-  },
-  {
-    "lid": "2 <-> 3",
-    "similarity": 0.18285482332718295,
-    "top3_fields": [
-      "constraints",
-      "mechanism",
-      "corePrinciples"
-    ]
-  },
-  {
-    "lid": "0 <-> 3",
-    "similarity": 0.18101456024492726,
-    "top3_fields": [
       "corePrinciples",
-      "mechanism",
+      "formalStructure"
+    ],
+    "reason": "Petrol Engine Basics and Model T Car History are connected through the concept of mass production and efficiency, as both discuss how standardization and interchangeable components enabled cost reduction and increased output."
+  },
+  {
+    "lid": "0 <-> 2",
+    "similarity": 0.12911619163246432,
+    "top3_fields": [
+      "formalStructure",
+      "corePrinciples",
       "applications"
-    ]
+    ],
+    "reason": "Related through formalStructure, corePrinciples, applications."
   },
   {
     "lid": "1 <-> 3",
-    "similarity": 0.1303770166969933,
-    "top3_fields": [
-      "corePrinciples",
-      "problemPatterns",
-      "applications"
-    ]
-  },
-  {
-    "lid": "4 <-> 5",
-    "similarity": 0.4809230260019662,
+    "similarity": 0.5386530019788156,
     "top3_fields": [
       "mechanism",
       "corePrinciples",
       "problemPatterns"
-    ]
+    ],
+    "reason": "Both 'Petrol Engine Basics' and 'Diesel Engine Basics' rely on thermodynamic efficiency and energy conversion, with 'Diesel Engine Basics' leveraging a high compression ratio to optimize combustion, a principle also relevant to 'Petrol Engine Basics'."
+  },
+  {
+    "lid": "0 <-> 3",
+    "similarity": 0.49628203656628267,
+    "top3_fields": [
+      "mechanism",
+      "corePrinciples",
+      "formalStructure"
+    ],
+    "reason": "Card A's mechanism of fuel-air mixture combustion is conceptually connected to Card B's high compression ratio for efficient ignition, as both rely on precise ignition to generate power."
+  },
+  {
+    "lid": "2 <-> 3",
+    "similarity": 0.23948121153852242,
+    "top3_fields": [
+      "problemPatterns",
+      "mechanism",
+      "formalStructure"
+    ],
+    "reason": "The Model T's assembly line production process, which reduced costs and increased efficiency, shares a conceptual connection with the diesel engine's efficient power generation through high-pressure compression and precise fuel injection."
+  },
+  {
+    "lid": "1 <-> 4",
+    "similarity": 0.6254336235851289,
+    "top3_fields": [
+      "mechanism",
+      "corePrinciples",
+      "problemPatterns"
+    ],
+    "reason": "Both Petrol Engine Basics and Rotary Engine Basics describe internal combustion engines, with the former using a four-stroke cycle and the latter a rotating combustion chamber. They share a common goal of converting chemical energy into mechanical energy. The mechanism of both engines involves the ignition of a fuel-air mixture, resulting in a small explosion. This explosion drives the piston in Petrol Engine Basics and the rotor in Rotary Engine Basics. Both engines rely on thermodynamic efficiency to maximize energy conversion. The core principles of both engines include conservation of angular momentum and thermodynamic efficiency. The connection between the two cards is rooted in their shared underlying physics. The problem patterns of both engines involve optimizing energy conversion and minimizing energy loss."
+  },
+  {
+    "lid": "0 <-> 4",
+    "similarity": 0.47054367026392574,
+    "top3_fields": [
+      "mechanism",
+      "corePrinciples",
+      "formalStructure"
+    ],
+    "reason": "Related through mechanism, corePrinciples, formalStructure."
+  },
+  {
+    "lid": "3 <-> 4",
+    "similarity": 0.457978238437343,
+    "top3_fields": [
+      "mechanism",
+      "problemPatterns",
+      "formalStructure"
+    ],
+    "reason": "Both Diesel Engine Basics and Rotary Engine Basics are internal combustion engines. They share a common mechanism involving ignition and power generation. Diesel Engine Basics uses compressed air to ignite fuel, while Rotary Engine Basics uses a rotor with a combustion chamber. The problem patterns for both cards are currently empty. However, their formal structures show exponential relationships between variables. Diesel Engine Basics has an inverse relationship between compression ratio and ignition temperature, while Rotary Engine Basics has an exponential decay of fuel efficiency with increasing speed. These similarities suggest a connection between the two cards."
+  },
+  {
+    "lid": "2 <-> 4",
+    "similarity": 0.20774378497054563,
+    "top3_fields": [
+      "problemPatterns",
+      "formalStructure",
+      "corePrinciples"
+    ],
+    "reason": "Related through problemPatterns, formalStructure, corePrinciples."
   }
 ]

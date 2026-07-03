@@ -37,6 +37,7 @@ class LinkRecord(BaseModel):
     lid: str
     similarity: float
     top3_fields: List[str]
+    reason: str
 
 
 class GenerateCardResponse(BaseModel):
