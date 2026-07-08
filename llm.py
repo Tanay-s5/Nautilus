@@ -118,7 +118,7 @@ Format:
   "reason": "<7-8 short, sentences with no filler>"
 }}
 
-Two knowledge cards were flagged as related by an embedding similarity model.
+Two topics were flagged as related by an embedding similarity model.
 
 Card: "{card_a.get('title', '')}"
 {card_a.get('previewSummary', '')}
@@ -136,7 +136,8 @@ Rules:
 - 7-8 sentences, short and dense
 - Use the titles to reffer to the cards
 - If there is no conection , just say there is no conection
-"""
+- Assume the user has no idea about the strongly on these fields so explain it wihtout refrering those words.
+- The user has no idea about the similarity embedding so do not mention nayhting about it.
 
 
 def generate_card_data(user_prompt: str) -> dict:
@@ -163,7 +164,7 @@ def generate_link_reason(card_a: dict, card_b: dict, top_fields: List[str]) -> s
     prompt = link_prompt(card_a, card_b, top_fields)
 
     try:
-        text = call_llm(prompt, max_tokens=200, json_mode=True)
+        text = call_llm(prompt, max_tokens=400, json_mode=True)
     except HTTPException as e:
         print("Link reason generation failed:", e.detail)
         return fallback
