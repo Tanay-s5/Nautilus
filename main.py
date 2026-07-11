@@ -2,6 +2,9 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 from database import (
     add_card,
     add_links,
@@ -23,6 +26,13 @@ from validation import Card, GenerateCardResponse, LinkRecord, PromptRequest, St
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.post("/generate-card", response_model=GenerateCardResponse)
 def generate_card(req: PromptRequest):
@@ -42,6 +52,8 @@ def generate_card(req: PromptRequest):
             reason = generate_link_reason(existing["data"], card_data, top_fields)
             new_links.append({
                 "lid": f"{existing['id']} <-> {card_id}",
+                "card_a_id": existing["id"],
+                "card_b_id": card_id,
                 "similarity": score,
                 "top3_fields": top_fields,
                 "reason": reason,

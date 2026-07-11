@@ -75,10 +75,13 @@ def add_links(new_links: List[Dict[str, Any]]) -> None:
 
 
 def remove_card(card_id: int) -> bool:
+    global links
     for c in cards:
         if c["id"] == card_id:
             cards.remove(c)
+            links = [l for l in links if l["card_a_id"] != card_id and l["card_b_id"] != card_id]
             save_cards()
+            save_links()
             return True
     return False
 

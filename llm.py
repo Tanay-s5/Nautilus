@@ -138,6 +138,7 @@ Rules:
 - If there is no conection , just say there is no conection
 - Assume the user has no idea about the strongly on these fields so explain it wihtout refrering those words.
 - The user has no idea about the similarity embedding so do not mention nayhting about it.
+"""
 
 
 def generate_card_data(user_prompt: str) -> dict:
