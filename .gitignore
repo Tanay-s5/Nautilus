@@ -1,3 +1,13 @@
-.env
-venv/
-__pycache__/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.env
+backend/data/*.json
+
+.DS_Store
