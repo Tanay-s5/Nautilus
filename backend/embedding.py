@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-model = SentenceTransformer("all-MiniLM-L6-v2", device=DEVICE)
+model = SentenceTransformer("all-MiniLM-L6-v2", device="onnx")
 
 print(f"Embedding model running on: {DEVICE}")
 

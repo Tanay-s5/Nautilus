@@ -3,5 +3,5 @@ uvicorn[standard]>=0.30.0
 pydantic>=2.6.0
 python-dotenv>=1.0.0
 openai>=1.30.0
-sentence-transformers>=2.7.0
+sentence-transformers[onnx]
 numpy>=1.26.0
