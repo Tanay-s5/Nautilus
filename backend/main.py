@@ -28,7 +28,7 @@ app.add_middleware(
     CORSMiddleware,
     # Nautilus frontend (vite.config.ts) runs on :8080; :5173 is Vite's default,
     # kept in case the frontend port config changes.
-    allow_origins=["http://localhost:8080", "http://localhost:5173"],
+    allow_origins=["https://nautilus-one-swart.vercel.app"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
