@@ -185,8 +185,6 @@ def generate_link_details(card_a: dict, card_b: dict, top_fields: List[str]) -> 
     prompt = link_prompt(card_a, card_b, top_fields)
 
     try:
-        # Slightly higher than before (400) since the response now carries
-        # short_label alongside reason within the same call.
         text = call_llm(prompt, max_tokens=450, json_mode=True)
     except HTTPException as e:
         print("Link detail generation failed:", e.detail)

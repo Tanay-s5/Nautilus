@@ -1,7 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { X, Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { getSettings, updateSettings, getUserWeights, getCachedWeights, DEFAULT_USER } from "@/lib/api";
+
+const BATCH_SIZE_MIN = 5;
+const BATCH_SIZE_MAX = 50;
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -26,6 +30,92 @@ const backgroundOptions = [
   { value: "dots", label: "Dots" },
   { value: "grid", label: "Grid" },
 ];
+
+function PersonalizationSection() {
+  // Seed from the cached weights.json (the only thing Nautilus persists
+  // client-side) so status text shows immediately instead of blank while
+  // the network calls below are in flight.
+  const cachedWeights = getCachedWeights();
+  const [batchSize, setBatchSize] = useState<number>(cachedWeights?.batch_size ?? BATCH_SIZE_MIN);
+  const [status, setStatus] = useState<string>(
+    cachedWeights
+      ? cachedWeights.is_personalized
+        ? `Personalized from ${cachedWeights.total_ratings} rating${cachedWeights.total_ratings === 1 ? "" : "s"}`
+        : `Not personalized yet - ${cachedWeights.ratings_until_next_refit} rating${cachedWeights.ratings_until_next_refit === 1 ? "" : "s"} to go`
+      : ""
+  );
+  const [savingBatchSize, setSavingBatchSize] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((s) => { if (!cancelled) setBatchSize(s.batch_size); })
+      .catch(() => {});
+    getUserWeights(DEFAULT_USER)
+      .then((w) => {
+        if (cancelled) return;
+        setStatus(
+          w.is_personalized
+            ? `Personalized from ${w.total_ratings} rating${w.total_ratings === 1 ? "" : "s"}`
+            : `Not personalized yet - ${w.ratings_until_next_refit} rating${w.ratings_until_next_refit === 1 ? "" : "s"} to go`
+        );
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const commitBatchSize = async (value: number) => {
+    setSavingBatchSize(true);
+    try {
+      const updated = await updateSettings({ batch_size: Math.round(value) });
+      setBatchSize(updated.batch_size);
+    } catch {
+      // Leave the slider showing whatever the user set - not worth a toast
+      // for a settings tweak; they can just try again.
+    } finally {
+      setSavingBatchSize(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        Personalization
+      </label>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Ratings per calibration round{savingBatchSize && " (saving…)"}
+          </p>
+          <span className="text-xs font-medium text-foreground tabular-nums">{batchSize}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground w-4">{BATCH_SIZE_MIN}</span>
+          <input
+            type="range"
+            min={BATCH_SIZE_MIN}
+            max={BATCH_SIZE_MAX}
+            step={1}
+            value={batchSize}
+            onChange={(e) => setBatchSize(Number(e.target.value))}
+            onMouseUp={(e) => commitBatchSize(Number((e.target as HTMLInputElement).value))}
+            onTouchEnd={(e) => commitBatchSize(Number((e.target as HTMLInputElement).value))}
+            onKeyUp={(e) => commitBatchSize(Number((e.target as HTMLInputElement).value))}
+            className="flex-1 slider-orange"
+          />
+          <span className="text-[10px] text-muted-foreground w-6 text-right">{BATCH_SIZE_MAX}</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          How many link ratings it takes before your weights recalculate. Lower = personalizes
+          faster but noisier; higher = slower but steadier.
+        </p>
+      </div>
+
+      {status && <p className="text-[11px] text-muted-foreground">{status}</p>}
+    </div>
+  );
+}
 
 export function SettingsPanel({
   isOpen,
@@ -129,6 +219,8 @@ export function SettingsPanel({
                     })}
                   </div>
                 </div>
+
+                <PersonalizationSection />
 
               </div>
             </div>

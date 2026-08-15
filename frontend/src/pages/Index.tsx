@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { ReactFlowProvider } from "@xyflow/react";
 import { KnowledgeCanvas } from "@/components/canvas/KnowledgeCanvas";
+import { RatingPanel } from "@/components/canvas/RatingPanel";
 import { LeftSidebar } from "@/components/LeftSidebar";
 import { SettingsPanel, CanvasSettings } from "@/components/SettingsPanel";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -27,7 +28,7 @@ function saveSettings(s: CanvasSettings) {
 }
 
 const IndexContent = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -180,6 +181,8 @@ const IndexContent = () => {
           />
         </div>
       </main>
+
+      <RatingPanel />
 
       <SettingsPanel
         isOpen={settingsOpen}

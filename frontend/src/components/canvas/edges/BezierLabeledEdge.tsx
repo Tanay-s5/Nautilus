@@ -13,6 +13,13 @@ interface BezierLabeledEdgeData {
   onRecompute?: (sourceId: string, targetId: string) => void;
   onEdit?: (edgeId: string, label: string, explanation: string) => void;
   onDelete?: (edgeId: string) => void;
+  // Backend link id - present on links that came from generate-card, absent
+  // on manually-drawn edges (which have nothing to rate against).
+  lid?: string;
+  // True when the default weights were least confident about this link -
+  // shown as a small nudge that it's a particularly useful one to rate.
+  isBoundary?: boolean;
+  onRate?: (lid: string, rating: number) => Promise<unknown>;
 }
 
 function BezierLabeledEdgeComponent({
@@ -39,6 +46,9 @@ function BezierLabeledEdgeComponent({
   const [editLabel, setEditLabel] = useState(edgeData.label || "");
   const [editExplanation, setEditExplanation] = useState(edgeData.explanation || "");
   const [showEdgeMenu, setShowEdgeMenu] = useState(false);
+  const [ratingValue, setRatingValue] = useState(50);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingBusy, setRatingBusy] = useState(false);
 
   // Parallel edge offset
   const curvatureOffset = useMemo(() => {
@@ -83,6 +93,14 @@ function BezierLabeledEdgeComponent({
     edgeData.onDelete?.(id);
     setShowEdgeMenu(false);
   }, [edgeData, id]);
+
+  const handleRate = useCallback(async () => {
+    if (!edgeData.lid || !edgeData.onRate) return;
+    setRatingBusy(true);
+    await edgeData.onRate(edgeData.lid, ratingValue);
+    setRatingBusy(false);
+    setRatingSubmitted(true);
+  }, [edgeData, ratingValue]);
 
   const handleEdgeClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -275,6 +293,40 @@ function BezierLabeledEdgeComponent({
                       <p className="text-xs text-muted-foreground mb-3">
                         {edgeData.explanation}
                       </p>
+                    )}
+
+                    {edgeData.lid && edgeData.onRate && (
+                      <div className="pt-2 pb-1 border-t border-border/50">
+                        {ratingSubmitted ? (
+                          <p className="text-xs text-muted-foreground">Thanks - rating saved.</p>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] text-muted-foreground">
+                                {edgeData.isBoundary ? "Rate this - it's an uncertain one" : "Rate this connection"}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">{ratingValue}</span>
+                            </div>
+                            <div className="flex items-center gap-2 nodrag nopan">
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={ratingValue}
+                                onChange={(e) => setRatingValue(Number(e.target.value))}
+                                className="flex-1"
+                              />
+                              <button
+                                onClick={handleRate}
+                                disabled={ratingBusy}
+                                className="px-2 py-1 text-xs bg-accent text-accent-foreground rounded disabled:opacity-50"
+                              >
+                                Rate
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     )}
 
                     <div className="flex gap-2 pt-2 border-t border-border/50">

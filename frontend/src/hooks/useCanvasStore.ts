@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext, type ReactNode, createElement } from "react";
 import { Node, Edge, NodeChange, EdgeChange, addEdge, applyNodeChanges, applyEdgeChanges, Connection } from "@xyflow/react";
 import { toast } from "sonner";
-import { generateCard, deleteCard as deleteBackendCard } from "@/lib/api";
+import { generateCard, deleteCard as deleteBackendCard, submitRating, clearCanvasData, DEFAULT_USER } from "@/lib/api";
+import { BoundaryRatingToast } from "@/components/canvas/BoundaryRatingToast";
 
 const nodeColors = ["red", "orange", "yellow", "green", "mint", "blue", "purple", "pink", "coral"] as const;
 
@@ -175,6 +176,23 @@ function useCanvasStoreInternal() {
     return id;
   }, [nodes.length]);
 
+  // Shared by edge inline-rating, the boundary-link toast, and the rating
+  // panel - one code path for "submit a rating" so the refit notification
+  // behaves the same no matter where the rating came from.
+  const rateLink = useCallback(async (lid: string, rating: number) => {
+    try {
+      const res = await submitRating(DEFAULT_USER, lid, rating);
+      if (res.refit_triggered) {
+        toast.success("Your personalized weights just updated from your ratings");
+      }
+      return res;
+    } catch (err) {
+      console.error("Failed to submit rating:", err);
+      toast.error("Couldn't save that rating - is the backend running?");
+      return null;
+    }
+  }, []);
+
   const generateKnowledgeCard = useCallback(async (prompt: string) => {
     setIsGenerating(true);
     try {
@@ -238,6 +256,9 @@ function useCanvasStoreInternal() {
               label: link.short_label,
               explanation: link.reason,
               confidence: link.similarity,
+              lid: link.lid,
+              isBoundary: link.is_boundary,
+              onRate: rateLink,
             },
             style: { stroke: "hsl(220 10% 25%)", strokeWidth: 2 },
           });
@@ -246,6 +267,22 @@ function useCanvasStoreInternal() {
         if (newEdges.length > 0) {
           setEdges((eds) => [...eds, ...newEdges]);
           toast.success(`Found ${newEdges.length} connection${newEdges.length > 1 ? "s" : ""}`);
+        }
+
+        // Links the default weights were least confident about are the
+        // most useful ones to get a rating on - nudge for those specifically
+        // rather than asking about every link from this batch.
+        const boundaryLinks = links.filter((l) => l.is_boundary);
+        if (boundaryLinks.length > 0) {
+          toast.custom(
+            (toastId) =>
+              createElement(BoundaryRatingToast, {
+                links: boundaryLinks,
+                onRate: rateLink,
+                onDismiss: () => toast.dismiss(toastId),
+              }),
+            { duration: 25000 }
+          );
         }
       }
 
@@ -258,7 +295,7 @@ function useCanvasStoreInternal() {
     } finally {
       setIsGenerating(false);
     }
-  }, [nodes]);
+  }, [nodes, rateLink]);
 
   const updateNodeData = useCallback((nodeId: string, newData: Partial<any>) => {
     setNodes((nds) => nds.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node));
@@ -278,21 +315,27 @@ function useCanvasStoreInternal() {
     setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
   }, []);
 
-  const clearCanvas = useCallback(() => {
+  const clearCanvas = useCallback(async () => {
     setNodes([]);
     setEdges([]);
     if (canvasId) {
       saveCanvasNodesToStorage(canvasId, []);
       saveCanvasEdgesToStorage(canvasId, []);
     }
-    toast.success("Canvas cleared");
+    try {
+      await clearCanvasData();
+      toast.success("Canvas cleared");
+    } catch (err) {
+      console.error("Failed to clear canvas on backend:", err);
+      toast.error("Canvas cleared locally, but the backend still has the old cards - is it running?");
+    }
   }, [canvasId]);
 
   return {
     nodes, edges, setNodes, setEdges,
     onNodesChange, onEdgesChange, onConnect,
     addNode, addImageNode, updateNodeData, deleteNode,
-    generateKnowledgeCard,
+    generateKnowledgeCard, rateLink,
     isGenerating, isLoading, clearCanvas, saveStatus,
     saveCanvas, loadCanvas, loadCanvasById, canvasId, flushSave,
   };

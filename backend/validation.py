@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -38,11 +38,27 @@ class LinkRecord(BaseModel):
     card_a_id: int
     card_b_id: int
     similarity: float
+    field_scores: Dict[str, float]
+    is_boundary: bool
     top3_fields: List[str]
     short_label: str
     reason: str
 
 
+class LinkRecordPersonalized(LinkRecord):
+    user_similarity: float
+
+
 class GenerateCardResponse(BaseModel):
     card: StoredCard
     links: List[LinkRecord]
+
+
+class RatingRequest(BaseModel):
+    user: str
+    lid: str
+    rating: float  
+
+
+class SettingsUpdate(BaseModel):
+    batch_size: Optional[int] = None

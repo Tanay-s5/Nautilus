@@ -378,3 +378,54 @@
 .resize-handle { @apply absolute w-3 h-3 bg-transparent cursor-nwse-resize; }
 .resize-handle::after { content: ''; @apply absolute bottom-1 right-1 w-2 h-2 border-r-2 border-b-2 border-muted-foreground/25 rounded-br-sm; }
 .resize-handle:hover::after { @apply border-muted-foreground/50; }
+
+/* Orange range sliders - batch-size setting & link-rating strength,
+   themed to match the orange RadialPulseLoader ("Generating…") accent. */
+input[type="range"].slider-orange {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: hsl(var(--topic-orange) / 0.2);
+  outline: none;
+  cursor: pointer;
+  accent-color: hsl(var(--topic-orange));
+}
+input[type="range"].slider-orange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: hsl(var(--topic-orange));
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 1px 3px hsla(210, 20%, 20%, 0.25);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+input[type="range"].slider-orange::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+input[type="range"].slider-orange::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: hsl(var(--topic-orange));
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 1px 3px hsla(210, 20%, 20%, 0.25);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+input[type="range"].slider-orange::-moz-range-thumb:hover {
+  transform: scale(1.15);
+}
+input[type="range"].slider-orange::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: hsl(var(--topic-orange) / 0.2);
+}
+input[type="range"].slider-orange:focus-visible {
+  box-shadow: 0 0 0 3px hsl(var(--topic-orange) / 0.25);
+  border-radius: 9999px;
+}
