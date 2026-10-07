@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext, type ReactNode, createElement } from "react";
 import { Node, Edge, NodeChange, EdgeChange, addEdge, applyNodeChanges, applyEdgeChanges, Connection } from "@xyflow/react";
 import { toast } from "sonner";
-import { generateCard, deleteCard as deleteBackendCard, submitRating, clearCanvasData, DEFAULT_USER } from "@/lib/api";
+import { generateCard, deleteCard as deleteBackendCard, submitRating, clearCanvasData } from "@/lib/api";
 import { BoundaryRatingToast } from "@/components/canvas/BoundaryRatingToast";
 
 const nodeColors = ["red", "orange", "yellow", "green", "mint", "blue", "purple", "pink", "coral"] as const;
@@ -181,7 +181,7 @@ function useCanvasStoreInternal() {
   // behaves the same no matter where the rating came from.
   const rateLink = useCallback(async (lid: string, rating: number) => {
     try {
-      const res = await submitRating(DEFAULT_USER, lid, rating);
+      const res = await submitRating(lid, rating);
       if (res.refit_triggered) {
         toast.success("Your personalized weights just updated from your ratings");
       }

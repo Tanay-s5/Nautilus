@@ -1,237 +1,280 @@
-import json
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from pathlib import Path
+import numpy as np
+from dotenv import load_dotenv
+from pgvector.psycopg import register_vector
+from psycopg import Connection
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+load_dotenv()
 
+DEFAULT_BATCH_SIZE = 20
 
-DB_FILE = DATA_DIR / "cards.json"
-LINKS_FILE = DATA_DIR / "links.json"
-RATINGS_FILE = DATA_DIR / "ratings.json"
-WEIGHTS_FILE = DATA_DIR / "weights.json"
-SETTINGS_FILE = DATA_DIR / "settings.json"
+_pool: Optional[ConnectionPool] = None
 
-DEFAULT_SETTINGS: Dict[str, Any] = {
-    "batch_size": 20,
-}
-
-cards: List[Dict[str, Any]] = []
-next_id: int = 0
-links: List[Dict[str, Any]] = []
-ratings: List[Dict[str, Any]] = []
-next_rating_id: int = 0
-user_weights: Dict[str, Dict[str, Any]] = {}
-settings: Dict[str, Any] = dict(DEFAULT_SETTINGS)
+#postgres vector->numpy vector
+def _configure(conn: Connection) -> None:
+    register_vector(conn)
 
 
-def load_cards() -> None:
-    global cards, next_id
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            cards = json.load(f)
-    next_id = max((c["id"] for c in cards), default=-1) + 1
+def open_pool(url: Optional[str] = None, min_size: int = 2, max_size: int = 10) -> None:
+    global _pool
+    url = url or os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set (see .env.example)")
+    _pool = ConnectionPool(
+        url,
+        min_size=min_size,
+        max_size=max_size,
+        kwargs={"row_factory": dict_row},
+        configure=_configure,
+        open=False,
+    )
+    _pool.open(wait=True, timeout=30)
 
 
-def save_cards() -> None:
-    with open(DB_FILE, "w") as f:
-        json.dump(cards, f, indent=2)
+def close_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None
 
 
-def load_links() -> None:
-    global links
-    if os.path.exists(LINKS_FILE):
-        with open(LINKS_FILE, "r") as f:
-            links = json.load(f)
-    _backfill_field_scores()
+def _pool_or_raise() -> ConnectionPool:
+    if _pool is None:
+        raise RuntimeError("Database pool is not open")
+    return _pool
 
 
-def _backfill_field_scores() -> None:
-    from embedding import BOUNDARY_BAND, LINK_THRESHOLD, field_cosine_scores
+def ping() -> bool:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute("SELECT 1 AS ok").fetchone()["ok"] == 1
 
-    changed = False
-    for link in links:
-        if "field_scores" not in link:
-            card_a = get_card_by_id(link["card_a_id"])
-            card_b = get_card_by_id(link["card_b_id"])
-            link["field_scores"] = (
-                field_cosine_scores(card_a["embeddings"], card_b["embeddings"])
-                if card_a and card_b
-                else {}
+
+def _touch_user(conn: Connection, user_id: UUID) -> None:
+    conn.execute(
+        "INSERT INTO users (id) VALUES (%s) "
+        "ON CONFLICT (id) DO UPDATE SET last_seen_at = now()",
+        (user_id,),
+    )
+
+
+
+
+
+
+def list_cards(user_id: UUID) -> List[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            "SELECT id, data FROM cards WHERE user_id = %s ORDER BY id", (user_id,)
+        ).fetchall()
+
+
+def get_card(user_id: UUID, card_id: int) -> Optional[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            "SELECT id, data FROM cards WHERE id = %s AND user_id = %s", (card_id, user_id)
+        ).fetchone()
+
+
+def list_card_embeddings(user_id: UUID) -> List[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.title, e.field_name, e.embedding "
+            "FROM cards c JOIN card_embeddings e ON e.card_id = c.id "
+            "WHERE c.user_id = %s ORDER BY c.id",
+            (user_id,),
+        ).fetchall()
+
+    grouped: Dict[int, Dict[str, Any]] = {}
+    for row in rows:
+        card = grouped.setdefault(
+            row["id"], {"id": row["id"], "title": row["title"], "embeddings": {}}
+        )
+        vec = row["embedding"]
+
+        card["embeddings"][row["field_name"]] = vec.to_numpy() if hasattr(vec, "to_numpy") else np.asarray(vec)
+    return list(grouped.values())
+
+
+def create_card_with_links(
+    user_id: UUID,
+    card_data: Dict[str, Any],
+    embeddings: Dict[str, Any],
+    links: List[Dict[str, Any]],) -> int:
+   
+    with _pool_or_raise().connection() as conn:  
+        _touch_user(conn, user_id)
+        card_id = conn.execute(
+            "INSERT INTO cards (user_id, title, data) VALUES (%s, %s, %s) RETURNING id",
+            (user_id, card_data["title"], Jsonb(card_data)),
+        ).fetchone()["id"]
+
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO card_embeddings (card_id, field_name, embedding) VALUES (%s, %s, %s)",
+                [
+                    (card_id, field, np.asarray(vec, dtype=np.float32))
+                    for field, vec in embeddings.items()
+                ],
             )
-            changed = True
-        if "is_boundary" not in link:
-            link["is_boundary"] = link["similarity"] <= LINK_THRESHOLD + BOUNDARY_BAND
-            changed = True
-    if changed:
-        save_links()
+            cur.executemany(
+                "INSERT INTO links (user_id, card_a_id, card_b_id, similarity, field_scores, "
+                "is_boundary, top3_fields, short_label, reason) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                [
+                    (
+                        user_id,
+                        min(l["other_card_id"], card_id),
+                        max(l["other_card_id"], card_id),
+                        l["similarity"],
+                        Jsonb(l["field_scores"]),
+                        l["is_boundary"],
+                        l["top3_fields"],
+                        l["short_label"],
+                        l["reason"],
+                    )
+                    for l in links
+                ],
+            )
+    return card_id
 
 
-def save_links() -> None:
-    with open(LINKS_FILE, "w") as f:
-        json.dump(links, f, indent=2)
+def delete_card(user_id: UUID, card_id: int) -> bool:
+    with _pool_or_raise().connection() as conn:
+        row = conn.execute(
+            "DELETE FROM cards WHERE id = %s AND user_id = %s RETURNING id", (card_id, user_id)
+        ).fetchone()
+    return row is not None
 
 
-def load_ratings() -> None:
-    global ratings, next_rating_id
-    if os.path.exists(RATINGS_FILE):
-        with open(RATINGS_FILE, "r") as f:
-            ratings = json.load(f)
-    next_rating_id = max((r["id"] for r in ratings), default=-1) + 1
+def clear_canvas(user_id: UUID) -> None:
+    with _pool_or_raise().connection() as conn:
+        conn.execute("DELETE FROM ratings WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM cards WHERE user_id = %s", (user_id,))
+        conn.execute(
+            "UPDATE user_weights SET rating_count_at_fit = 0 WHERE user_id = %s", (user_id,)
+        )
 
 
-def save_ratings() -> None:
-    with open(RATINGS_FILE, "w") as f:
-        json.dump(ratings, f, indent=2)
 
 
-def load_user_weights() -> None:
-    global user_weights
-    if os.path.exists(WEIGHTS_FILE):
-        with open(WEIGHTS_FILE, "r") as f:
-            user_weights = json.load(f)
 
 
-def save_user_weights_file() -> None:
-    with open(WEIGHTS_FILE, "w") as f:
-        json.dump(user_weights, f, indent=2)
+
+_LINK_COLUMNS = (
+    "id, card_a_id || ' <-> ' || card_b_id AS lid, card_a_id, card_b_id, similarity, "
+    "field_scores, is_boundary, top3_fields, short_label, reason"
+)
 
 
-def load_settings() -> None:
-    global settings
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            settings = {**DEFAULT_SETTINGS, **json.load(f)}
+def list_links(user_id: UUID) -> List[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            f"SELECT {_LINK_COLUMNS} FROM links WHERE user_id = %s ORDER BY similarity DESC",
+            (user_id,),
+        ).fetchall()
 
 
-def save_settings() -> None:
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
+def get_link(user_id: UUID, card_a_id: int, card_b_id: int) -> Optional[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            f"SELECT {_LINK_COLUMNS} FROM links "
+            "WHERE user_id = %s AND card_a_id = %s AND card_b_id = %s",
+            (user_id, card_a_id, card_b_id),
+        ).fetchone()
 
 
-def get_all_cards() -> List[Dict[str, Any]]:
-    return cards
+def list_link_candidates(user_id: UUID, threshold: float, limit: int) -> List[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            f"SELECT {_LINK_COLUMNS} FROM links l "
+            "WHERE l.user_id = %s AND NOT EXISTS ("
+            "  SELECT 1 FROM ratings r WHERE r.user_id = l.user_id "
+            "  AND r.card_a_id = l.card_a_id AND r.card_b_id = l.card_b_id) "
+            "ORDER BY abs(l.similarity - %s) LIMIT %s",
+            (user_id, threshold, limit),
+        ).fetchall()
 
 
-def get_card_by_id(card_id: int) -> Optional[Dict[str, Any]]:
-    for c in cards:
-        if c["id"] == card_id:
-            return c
-    return None
 
 
-def get_all_links() -> List[Dict[str, Any]]:
-    return links
 
 
-def get_link_by_id(lid: str) -> Optional[Dict[str, Any]]:
-    for l in links:
-        if l["lid"] == lid:
-            return l
-    return None
 
 
-def get_next_id() -> int:
-    global next_id
-    current = next_id
-    next_id += 1
-    return current
+def upsert_rating(user_id: UUID, link: Dict[str, Any], rating: int) -> None:
+    with _pool_or_raise().connection() as conn:
+        _touch_user(conn, user_id)
+        conn.execute(
+            "INSERT INTO ratings (user_id, link_id, card_a_id, card_b_id, rating, field_scores) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (user_id, card_a_id, card_b_id) DO UPDATE SET "
+            "link_id = EXCLUDED.link_id, rating = EXCLUDED.rating, "
+            "field_scores = EXCLUDED.field_scores, updated_at = now()",
+            (
+                user_id,
+                link["id"],
+                link["card_a_id"],
+                link["card_b_id"],
+                rating,
+                Jsonb(link["field_scores"]),
+            ),
+        )
 
 
-def add_card(card: Dict[str, Any]) -> None:
-    cards.append(card)
-    save_cards()
+def count_ratings(user_id: UUID) -> int:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            "SELECT count(*) AS n FROM ratings WHERE user_id = %s", (user_id,)
+        ).fetchone()["n"]
 
 
-def add_links(new_links: List[Dict[str, Any]]) -> None:
-    links.extend(new_links)
-    save_links()
+def list_ratings(user_id: UUID) -> List[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            "SELECT rating, field_scores FROM ratings WHERE user_id = %s ORDER BY id", (user_id,)
+        ).fetchall()
 
 
-def remove_card(card_id: int) -> bool:
-    global links
-    for c in cards:
-        if c["id"] == card_id:
-            cards.remove(c)
-            links = [l for l in links if l["card_a_id"] != card_id and l["card_b_id"] != card_id]
-            save_cards()
-            save_links()
-            return True
-    return False
 
 
-def clear_canvas_data() -> None:
-    global cards, next_id, links, ratings, next_rating_id
-    cards = []
-    next_id = 0
-    links = []
-    ratings = []
-    next_rating_id = 0
-    save_cards()
-    save_links()
-    save_ratings()
-
-    for entry in user_weights.values():
-        entry["rating_count_at_fit"] = 0
-    if user_weights:
-        save_user_weights_file()
 
 
-def get_next_rating_id() -> int:
-    global next_rating_id
-    current = next_rating_id
-    next_rating_id += 1
-    return current
+
+def get_weights_row(user_id: UUID) -> Optional[Dict[str, Any]]:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            "SELECT weights, rating_count_at_fit FROM user_weights WHERE user_id = %s", (user_id,)
+        ).fetchone()
 
 
-def add_rating(rating: Dict[str, Any]) -> None:
-    for i, r in enumerate(ratings):
-        if r["user"] == rating["user"] and r["lid"] == rating["lid"]:
-            rating["id"] = r["id"]
-            ratings[i] = rating
-            save_ratings()
-            return
-    ratings.append(rating)
-    save_ratings()
+def upsert_weights(user_id: UUID, weights: Dict[str, float], rating_count_at_fit: int) -> None:
+    with _pool_or_raise().connection() as conn:
+        _touch_user(conn, user_id)
+        conn.execute(
+            "INSERT INTO user_weights (user_id, weights, rating_count_at_fit) VALUES (%s, %s, %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET weights = EXCLUDED.weights, "
+            "rating_count_at_fit = EXCLUDED.rating_count_at_fit, updated_at = now()",
+            (user_id, Jsonb(weights), rating_count_at_fit),
+        )
 
 
-def get_ratings_for_user(user: str) -> List[Dict[str, Any]]:
-    return [r for r in ratings if r["user"] == user]
+def get_batch_size(user_id: UUID) -> int:
+    with _pool_or_raise().connection() as conn:
+        row = conn.execute("SELECT batch_size FROM users WHERE id = %s", (user_id,)).fetchone()
+    return row["batch_size"] if row else DEFAULT_BATCH_SIZE
 
 
-def get_rated_lids_for_user(user: str) -> Set[str]:
-    return {r["lid"] for r in ratings if r["user"] == user}
-
-
-def get_user_weights_entry(user: str) -> Optional[Dict[str, Any]]:
-    return user_weights.get(user)
-
-
-def save_user_weights(user: str, weights: Dict[str, float], rating_count_at_fit: int) -> None:
-    user_weights[user] = {
-        "weights": weights,
-        "rating_count_at_fit": rating_count_at_fit,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    save_user_weights_file()
-
-
-def get_settings() -> Dict[str, Any]:
-    return settings
-
-
-def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
-    settings.update({k: v for k, v in patch.items() if v is not None})
-    save_settings()
-    return settings
-
-
-load_cards()
-load_links()
-load_ratings()
-load_user_weights()
-load_settings()
+def set_batch_size(user_id: UUID, batch_size: int) -> int:
+    with _pool_or_raise().connection() as conn:
+        return conn.execute(
+            "INSERT INTO users (id, batch_size) VALUES (%s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET batch_size = EXCLUDED.batch_size, last_seen_at = now() "
+            "RETURNING batch_size",
+            (user_id, batch_size),
+        ).fetchone()["batch_size"]

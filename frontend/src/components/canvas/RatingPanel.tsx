@@ -3,7 +3,7 @@ import { Star, X, RefreshCw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
-import { getRatingCandidates, getUserWeights, getCachedWeights, DEFAULT_USER, type LinkRecord } from "@/lib/api";
+import { getRatingCandidates, getUserWeights, getCachedWeights, type LinkRecord } from "@/lib/api";
 
 const CANDIDATE_LIMIT = 8;
 
@@ -29,8 +29,8 @@ export function RatingPanel() {
     setLoading(true);
     try {
       const [links, weights] = await Promise.all([
-        getRatingCandidates(DEFAULT_USER, CANDIDATE_LIMIT),
-        getUserWeights(DEFAULT_USER),
+        getRatingCandidates(CANDIDATE_LIMIT),
+        getUserWeights(),
       ]);
       setCandidates(links);
       setProgress({ untilNext: weights.ratings_until_next_refit, batchSize: weights.batch_size });
@@ -44,7 +44,7 @@ export function RatingPanel() {
   // Quiet badge-count fetch so the trigger button can hint there's
   // something to rate even before the panel is opened.
   useEffect(() => {
-    getRatingCandidates(DEFAULT_USER, CANDIDATE_LIMIT).then(setCandidates).catch(() => {});
+    getRatingCandidates(CANDIDATE_LIMIT).then(setCandidates).catch(() => {});
   }, []);
 
   useEffect(() => {

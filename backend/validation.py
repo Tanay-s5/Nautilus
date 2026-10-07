@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PromptRequest(BaseModel):
@@ -55,10 +55,9 @@ class GenerateCardResponse(BaseModel):
 
 
 class RatingRequest(BaseModel):
-    user: str
     lid: str
-    rating: float  
+    rating: float = Field(ge=0, le=100)
 
 
 class SettingsUpdate(BaseModel):
-    batch_size: Optional[int] = None
+    batch_size: Optional[int] = Field(default=None, ge=1)

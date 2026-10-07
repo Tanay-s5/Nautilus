@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { X, Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { getSettings, updateSettings, getUserWeights, getCachedWeights, DEFAULT_USER } from "@/lib/api";
+import { getSettings, updateSettings, getUserWeights, getCachedWeights } from "@/lib/api";
 
 const BATCH_SIZE_MIN = 5;
 const BATCH_SIZE_MAX = 50;
@@ -51,7 +51,7 @@ function PersonalizationSection() {
     getSettings()
       .then((s) => { if (!cancelled) setBatchSize(s.batch_size); })
       .catch(() => {});
-    getUserWeights(DEFAULT_USER)
+    getUserWeights()
       .then((w) => {
         if (cancelled) return;
         setStatus(

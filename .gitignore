@@ -9,5 +9,6 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.env
 backend/data/*.json
+.env
 
 .DS_Store

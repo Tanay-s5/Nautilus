@@ -4,7 +4,8 @@ from typing import Dict, List
 
 from dotenv import load_dotenv
 from fastapi import HTTPException
-from openai import AuthenticationError, OpenAI, PermissionDeniedError, RateLimitError
+from groq import AuthenticationError, Groq, PermissionDeniedError, RateLimitError
+
 
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
@@ -12,22 +13,17 @@ api_key = os.getenv("GROQ_API_KEY")
 if not api_key:
     raise ValueError("GROQ_API_KEY not found in .env")
 
-client = OpenAI(
-    api_key=api_key,
-    base_url="https://api.groq.com/openai/v1"
-)
+client = Groq(api_key=api_key)
 
 
-def call_llm(prompt: str, max_tokens: int = 500, json_mode: bool = False) -> str:
-    """
-    Generic Groq call. Returns the raw (stripped) response text.
-    Raises HTTPException on API failure.
-    """
+def call_llm(prompt: str, max_tokens: int = 1024, json_mode: bool = False) -> str:
     kwargs = dict(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-20b",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_tokens=max_tokens,
+        reasoning_effort="low", 
+        include_reasoning=False,
     )
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
@@ -155,7 +151,7 @@ Rules for "reason":
 
 def generate_card_data(user_prompt: str) -> dict:
     prompt = build_prompt(user_prompt)
-    text = call_llm(prompt, max_tokens=500, json_mode=True)
+    text = call_llm(prompt, max_tokens=2500, json_mode=True)
 
     text = text.replace("```json", "").replace("```", "").strip()
 
@@ -185,7 +181,7 @@ def generate_link_details(card_a: dict, card_b: dict, top_fields: List[str]) -> 
     prompt = link_prompt(card_a, card_b, top_fields)
 
     try:
-        text = call_llm(prompt, max_tokens=450, json_mode=True)
+        text = call_llm(prompt, max_tokens=1500, json_mode=True)
     except HTTPException as e:
         print("Link detail generation failed:", e.detail)
         return fallback

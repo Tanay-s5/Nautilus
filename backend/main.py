@@ -1,31 +1,19 @@
-from datetime import datetime, timezone
+import os
+import re
+import threading
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List
+from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+import database
 from calibration import (
     get_user_weights,
     is_personalized,
     maybe_refit,
     ratings_until_next_refit,
-)
-from database import (
-    add_card,
-    add_links,
-    add_rating,
-    clear_canvas_data,
-    get_all_cards,
-    get_all_links,
-    get_card_by_id,
-    get_link_by_id,
-    get_next_id,
-    get_next_rating_id,
-    get_rated_lids_for_user,
-    get_ratings_for_user,
-    get_settings,
-    remove_card,
-    update_settings,
 )
 from embedding import (
     BOUNDARY_BAND,
@@ -49,74 +37,130 @@ from validation import (
     StoredCard,
 )
 
-app = FastAPI()
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    database.open_pool()
+    yield
+    database.close_pool()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+_origins = os.getenv("CORS_ORIGINS", "http://localhost:8080,http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _origins.split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+
+
+
+def visitor_id(x_visitor_id: str = Header(default="")) -> UUID:
+    try:
+        return UUID(x_visitor_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Missing or invalid X-Visitor-Id header")
+
+
+#locks to prevent race condition
+_user_locks: Dict[UUID, threading.Lock] = {}
+_user_locks_guard = threading.Lock()
+
+def _lock_for(user_id: UUID) -> threading.Lock:
+    with _user_locks_guard:
+        return _user_locks.setdefault(user_id, threading.Lock())
+
+
+_LID_RE = re.compile(r"^(\d+) <-> (\d+)$")
+
+
+def _parse_lid(lid: str):
+    match = _LID_RE.match(lid)
+    if not match:
+        raise HTTPException(status_code=404, detail=f"Link {lid} not found")
+    return int(match.group(1)), int(match.group(2))
+
+
+
+
+
+
+
+
 @app.get("/ping")
 def ping():
+    try:
+        database.ping()
+    except Exception as e:
+        print("DB health check failed:", repr(e))
+        raise HTTPException(status_code=503, detail="Database unavailable")
     return {"status": "ok"}
 
+
 @app.post("/generate-card", response_model=GenerateCardResponse)
-def generate_card(req: PromptRequest):
-    data = generate_card_data(req.prompt)
-    card = Card(**data)
-    card_data = card.dict()
+def generate_card(req: PromptRequest, user_id: UUID = Depends(visitor_id)):
+    with _lock_for(user_id):
+        # 1. Slow work first, holding no database transaction: LLM call, then embeddings.
+        card_data = Card(**generate_card_data(req.prompt)).model_dump()
+        embeddings = embed_card_fields(card_data)
 
-    embeddings = embed_card_fields(card_data)
-    card_id = get_next_id()
+        # 2. Score against this visitor's existing cards (one query for all their vectors).
+        new_links: List[Dict[str, Any]] = []
+        card_data_by_id = {c["id"]: c["data"] for c in database.list_cards(user_id)}
+        for existing in database.list_card_embeddings(user_id):
+            field_scores = field_cosine_scores(embeddings, existing["embeddings"])
+            score = default_score(field_scores)
+            print(f"Card {existing['id']} ({existing['title']}) v/s new card -> {score}")
+            if score > LINK_THRESHOLD:
+                top_fields = top_contributing_fields(field_scores, WEIGHTS)
+                link_details = generate_link_details(
+                    card_data_by_id[existing["id"]], card_data, top_fields
+                )
+                new_links.append({
+                    "other_card_id": existing["id"],
+                    "similarity": score,
+                    "field_scores": field_scores,
+                    "is_boundary": score <= LINK_THRESHOLD + BOUNDARY_BAND,
+                    "top3_fields": top_fields,
+                    "short_label": link_details["short_label"],
+                    "reason": link_details["reason"],
+                })
+        new_links.sort(key=lambda l: l["similarity"], reverse=True)
 
-    new_links: List[Dict[str, Any]] = []
-    for existing in get_all_cards():
-        field_scores = field_cosine_scores(embeddings, existing["embeddings"])
-        score = default_score(field_scores)
-        print(f"Card {existing['id']} ({existing['data']['title']}) v/s New card {card_id} -> {score}")
-        if score > LINK_THRESHOLD:
-            top_fields = top_contributing_fields(field_scores, WEIGHTS)
-            link_details = generate_link_details(existing["data"], card_data, top_fields)
-            new_links.append({
-                "lid": f"{existing['id']} <-> {card_id}",
-                "card_a_id": existing["id"],
-                "card_b_id": card_id,
-                "similarity": score,
-                "field_scores": field_scores,
-                "is_boundary": score <= LINK_THRESHOLD + BOUNDARY_BAND,
-                "top3_fields": top_fields,
-                "short_label": link_details["short_label"],
-                "reason": link_details["reason"],
-            })
-    new_links.sort(key=lambda l: l["similarity"], reverse=True)
+        # 3. One short transaction writes the card, its nine vectors and its links together.
+        card_id = database.create_card_with_links(user_id, card_data, embeddings, new_links)
 
-    if new_links:
-        add_links(new_links)
-
-    stored_card = {
-        "id": card_id,
-        "data": card_data,
-        "embeddings": embeddings,
-    }
-
-    add_card(stored_card)
-
-    return {"card": stored_card, "links": new_links}
+    links_out = [
+        {
+            "lid": f"{l['other_card_id']} <-> {card_id}",
+            "card_a_id": l["other_card_id"],
+            "card_b_id": card_id,
+            **{k: l[k] for k in (
+                "similarity", "field_scores", "is_boundary",
+                "top3_fields", "short_label", "reason",
+            )},
+        }
+        for l in new_links
+    ]
+    return {"card": {"id": card_id, "data": card_data}, "links": links_out}
 
 
 @app.get("/cards", response_model=List[StoredCard])
-def get_cards():
-    return get_all_cards()
+def get_cards(user_id: UUID = Depends(visitor_id)):
+    return database.list_cards(user_id)
 
 
 @app.get("/links", response_model=List[LinkRecordPersonalized])
-def get_links(user: str = "default"):
-    weights = get_user_weights(user)
-    personalized = is_personalized(user)
+def get_links(user_id: UUID = Depends(visitor_id)):
+    weights = get_user_weights(user_id)
+    personalized = is_personalized(user_id)
     result = []
-    for link in get_all_links():
+    for link in database.list_links(user_id):
         item = dict(link)
         item["user_similarity"] = (
             personalized_score(link["field_scores"], weights) if personalized else link["similarity"]
@@ -126,83 +170,67 @@ def get_links(user: str = "default"):
 
 
 @app.get("/links/candidates", response_model=List[LinkRecord])
-def get_rating_candidates(user: str = "default", limit: int = 8):
-    rated = get_rated_lids_for_user(user)
-    unrated = [l for l in get_all_links() if l["lid"] not in rated]
-    unrated.sort(key=lambda l: abs(l["similarity"] - LINK_THRESHOLD))
-    return unrated[:limit]
+def get_rating_candidates(limit: int = 8, user_id: UUID = Depends(visitor_id)):
+    return database.list_link_candidates(user_id, LINK_THRESHOLD, max(1, min(limit, 50)))
 
 
 @app.get("/card/{card_id}", response_model=StoredCard)
-def get_card(card_id: int):
-    card = get_card_by_id(card_id)
+def get_card(card_id: int, user_id: UUID = Depends(visitor_id)):
+    card = database.get_card(user_id, card_id)
     if card is None:
         raise HTTPException(status_code=404, detail=f"Card {card_id} not found")
     return card
 
 
 @app.delete("/card/{card_id}")
-def delete_card(card_id: int):
-    if not remove_card(card_id):
+def delete_card(card_id: int, user_id: UUID = Depends(visitor_id)):
+    if not database.delete_card(user_id, card_id):
         raise HTTPException(status_code=404, detail=f"Card {card_id} not found")
     return {"message": f"Card {card_id} deleted"}
 
 
 @app.delete("/canvas")
-def delete_canvas():
-    clear_canvas_data()
+def delete_canvas(user_id: UUID = Depends(visitor_id)):
+    database.clear_canvas(user_id)
     return {"message": "Canvas cleared. Personalized weights and settings were preserved."}
 
 
 @app.post("/rating")
-def submit_rating(req: RatingRequest):
-    user = req.user.strip() or "default"
-    if not (0 <= req.rating <= 100):
-        raise HTTPException(status_code=422, detail="rating must be between 0 and 100")
-
-    link = get_link_by_id(req.lid)
+def submit_rating(req: RatingRequest, user_id: UUID = Depends(visitor_id)):
+    card_a_id, card_b_id = _parse_lid(req.lid)
+    link = database.get_link(user_id, card_a_id, card_b_id)
     if link is None:
         raise HTTPException(status_code=404, detail=f"Link {req.lid} not found")
 
-    rating_record = {
-        "id": get_next_rating_id(),
-        "user": user,
-        "lid": req.lid,
-        "card_a_id": link["card_a_id"],
-        "card_b_id": link["card_b_id"],
-        "rating": req.rating,
-        "field_scores": link["field_scores"],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    add_rating(rating_record)
-    refit_happened = maybe_refit(user)
+    database.upsert_rating(user_id, link, round(req.rating))
+    refit_happened = maybe_refit(user_id)
 
     return {
         "message": "Rating recorded",
         "refit_triggered": refit_happened,
-        "ratings_until_next_refit": ratings_until_next_refit(user),
+        "ratings_until_next_refit": ratings_until_next_refit(user_id),
     }
 
 
-@app.get("/weights/{user}")
-def read_user_weights(user: str):
+@app.get("/weights")
+def read_user_weights(user_id: UUID = Depends(visitor_id)):
     return {
-        "user": user,
-        "weights": get_user_weights(user),
-        "is_personalized": is_personalized(user),
-        "total_ratings": len(get_ratings_for_user(user)),
-        "ratings_until_next_refit": ratings_until_next_refit(user),
-        "batch_size": get_settings()["batch_size"],
+        "user": str(user_id),
+        "weights": get_user_weights(user_id),
+        "is_personalized": is_personalized(user_id),
+        "total_ratings": database.count_ratings(user_id),
+        "ratings_until_next_refit": ratings_until_next_refit(user_id),
+        "batch_size": database.get_batch_size(user_id),
     }
 
 
 @app.get("/settings")
-def read_settings():
-    return get_settings()
+def read_settings(user_id: UUID = Depends(visitor_id)):
+    return {"batch_size": database.get_batch_size(user_id)}
 
 
 @app.put("/settings")
-def write_settings(patch: SettingsUpdate):
-    if patch.batch_size is not None and patch.batch_size < 1:
-        raise HTTPException(status_code=422, detail="batch_size must be at least 1")
-    return update_settings(patch.dict(exclude_unset=True))
+def write_settings(patch: SettingsUpdate, user_id: UUID = Depends(visitor_id)):
+    if patch.batch_size is None:
+        return {"batch_size": database.get_batch_size(user_id)}
+    return {"batch_size": database.set_batch_size(user_id, patch.batch_size)}
