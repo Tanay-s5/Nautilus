@@ -1,8 +1,11 @@
 import os
 import re
+import json
+import logging
 import threading
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
+from pydantic import ValidationError
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -37,7 +40,7 @@ from validation import (
     StoredCard,
 )
 
-
+logger = logging.getLogger("nautilus")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     database.open_pool()
@@ -106,7 +109,16 @@ def ping():
 def generate_card(req: PromptRequest, user_id: UUID = Depends(visitor_id)):
     with _lock_for(user_id):
         # 1. Slow work first, holding no database transaction: LLM call, then embeddings.
-        card_data = Card(**generate_card_data(req.prompt)).model_dump()
+        try:
+            card_data = Card(**generate_card_data(req.prompt)).model_dump()
+        except (ValidationError, json.JSONDecodeError) as e:
+            logger.warning(
+                "Card JSON validation failed for prompt %r: %s", req.prompt[:200], e
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="JSON validation failed. Try again with a shorter or less complicated prompt.",
+            )
         embeddings = embed_card_fields(card_data)
 
         # 2. Score against this visitor's existing cards (one query for all their vectors).
