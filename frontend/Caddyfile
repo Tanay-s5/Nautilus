@@ -1,0 +1,17 @@
+# SITE_ADDRESS comes from .env (e.g. 34-93-12-45.sslip.io). A real hostname makes Caddy fetch
+# and renew a free HTTPS certificate on its own.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# /api/cards -> backend sees /cards
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else is the built React app; unknown paths fall back to index.html (SPA routing)
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

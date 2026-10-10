@@ -3,6 +3,7 @@ uvicorn[standard]>=0.30.0
 pydantic>=2.6.0
 python-dotenv>=1.0.0
 groq>=1.0.0
+torch>=2.2.0
 sentence-transformers>=2.7.0
 numpy>=1.26.0
 scipy>=1.11.0
