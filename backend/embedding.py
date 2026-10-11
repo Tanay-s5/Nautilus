@@ -55,7 +55,7 @@ WEIGHTS: Dict[str, float] = {
 
 FIELD_NAMES: List[str] = sorted(WEIGHTS.keys())
 
-LINK_THRESHOLD = 0.4
+LINK_THRESHOLD = 0.20
 
 
 BOUNDARY_BAND = 0.3
