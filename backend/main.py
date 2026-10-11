@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import database
 from calibration import (
+    get_effective_weights,
     get_user_weights,
     is_personalized,
     maybe_refit,
@@ -18,8 +19,6 @@ from calibration import (
 from embedding import (
     BOUNDARY_BAND,
     LINK_THRESHOLD,
-    WEIGHTS,
-    default_score,
     embed_card_fields,
     field_cosine_scores,
     personalized_score,
@@ -109,15 +108,16 @@ def generate_card(req: PromptRequest, user_id: UUID = Depends(visitor_id)):
         card_data = Card(**generate_card_data(req.prompt)).model_dump()
         embeddings = embed_card_fields(card_data)
 
-        # 2. Score against this visitor's existing cards (one query for all their vectors).
+        # 2. Score against this visitor's existing cards (one query for all their vectors),
+        weights = get_effective_weights(user_id)
         new_links: List[Dict[str, Any]] = []
         card_data_by_id = {c["id"]: c["data"] for c in database.list_cards(user_id)}
         for existing in database.list_card_embeddings(user_id):
             field_scores = field_cosine_scores(embeddings, existing["embeddings"])
-            score = default_score(field_scores)
+            score = personalized_score(field_scores, weights)
             print(f"Card {existing['id']} ({existing['title']}) v/s new card -> {score}")
             if score > LINK_THRESHOLD:
-                top_fields = top_contributing_fields(field_scores, WEIGHTS)
+                top_fields = top_contributing_fields(field_scores, weights)
                 link_details = generate_link_details(
                     card_data_by_id[existing["id"]], card_data, top_fields
                 )
@@ -157,7 +157,7 @@ def get_cards(user_id: UUID = Depends(visitor_id)):
 
 @app.get("/links", response_model=List[LinkRecordPersonalized])
 def get_links(user_id: UUID = Depends(visitor_id)):
-    weights = get_user_weights(user_id)
+    weights = get_effective_weights(user_id)
     personalized = is_personalized(user_id)
     result = []
     for link in database.list_links(user_id):
