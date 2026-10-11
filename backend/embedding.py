@@ -58,7 +58,7 @@ FIELD_NAMES: List[str] = sorted(WEIGHTS.keys())
 LINK_THRESHOLD = 0.4
 
 
-BOUNDARY_BAND = 0.3
+BOUNDARY_BAND = 0.15
 
 
 def field_cosine_scores(e1: dict, e2: dict) -> Dict[str, float]:
