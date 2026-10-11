@@ -2,9 +2,7 @@
 
 # Nautilus
 
-### Stop scrolling through chats. Start building a map.
-
-**Nautilus turns every AI answer into a card on an infinite canvas, then automatically links it to the ideas it truly resembles — and explains why.**
+**Nautilus turns every AI answer into a card on an infinite canvas, then automatically links it to the ideas it truly resembles and explains why.**
 
 <br/>
 
