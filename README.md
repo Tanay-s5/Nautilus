@@ -2,9 +2,6 @@
 
 # Nautilus
 
-### Stop scrolling through chats. Start building a map.
-
-**Nautilus turns every AI answer into a card on an infinite canvas, then automatically links it to the ideas it truly resembles — and explains why.**
 
 <br/>
 
@@ -19,7 +16,7 @@
 ![Groq](https://img.shields.io/badge/LLM-Groq-F55036?style=flat-square)
 ![GCP](https://img.shields.io/badge/Hosted_on-Google_Cloud-4285F4?style=flat-square&logo=googlecloud&logoColor=white)
 
-[**What is it?**](#what-is-nautilus) · [**How it works**](#-how-it-works) · [**The Tech**](#the-tech) · [**Design Choices**](#backend-design-choices) · [**Frontend**](#frontend) · [**Future Scope**](#future-scope) · [**Contributors**](#who-made-it) 
+[**What is it?**](#what-is-nautilus) · [**How it works**](#how-it-works) · [**Tech**](#the-tech) · [**Design Choices**](#backend-design-choices) · [**Frontend**](#frontend)  · [**Contributors**](#who-made-it) 
 
 </div>
 
@@ -28,38 +25,31 @@
 
 ## What is Nautilus?
 
-Chat-based AI is **linear**. You ask, it answers, the answer scrolls away, and three prompts later you've forgotten how today's question connects to the one from an hour ago. The connections between ideas live only in your head.
+Chat-based AI is linear, as the chat grows, questions and answers blur together and the connections between them get lost.
 
 **Nautilus replaces the chat thread with a canvas.**
 
-- Every prompt creates **one independent Card** — a short title, a punchy summary, and a deeper explanation you open with a double-click. It is *not* a continued conversation.
+- Every prompt creates **one independent Card**  a short title, a summary, and an explanation.
 - The system continuously compares every new Card against the Cards already on your canvas.
-- When two concepts are genuinely related, Nautilus draws a **Link** between them, labels it in a few words, and writes a short explanation of *why* and *how* they connect.
-- Over time you get a **non-linear, evolving knowledge graph** that you can explore, rearrange and reason about spatially instead of sequentially.
+- When two concepts are  related, Nautilus draws a **Link** between them, labels it in, and writes a short reason of *why* and *how* they connect.
+- Over time you get a **knowledge graph** that you can explore, rearrange and reason about spatially instead of sequentially.
 
 > **Terminology** &nbsp;·&nbsp; **Card** = the information about one topic. &nbsp;**Link** = a labelled, explained connection between two Cards.
 
 ```text
-╭─────────────────╮                             ╭─────────────────╮
-│                 │                             │                 │
-│                 │       ╭────────────╮        │                 │
-│      Card A     │───────│    Link    │───────►│      Card B     │
-│                 │       ╰────────────╯        │                 │
-│                 │                             │                 │
-╰─────────────────╯                             ╰─────────────────╯
+        ╭─────────────────╮                             ╭─────────────────╮
+        │                 │                             │                 │
+        │                 │       ╭────────────╮        │                 │
+        │      Card A     │───────│    Link    │───────►│      Card B     │
+        │                 │       ╰────────────╯        │                 │
+        │                 │                             │                 │
+        ╰─────────────────╯                             ╰─────────────────╯
 ```
 
-### The idea that makes it different
-
-Most "related content" features match on *words* or on a single blended embedding of the whole text. Nautilus asks a harder question: **do these two concepts work the same way?**
-
 > 
-
-To do that, every Card is broken into **nine separate fields** (core principles, mechanism, formal structure, applications, …), each embedded on its own and weighted by how much it should matter. Then the weights **learn from you**: rate a few links, and Nautilus refits its own similarity function to your sense of what "related" means.
 <br/>
 <br/>
 
-<span style="font-size: 30px;">A typical session</span>
 <div align="center">
 
 |  | You | Nautilus |
@@ -81,7 +71,7 @@ To do that, every Card is broken into **nine separate fields** (core principles,
 
 <div align="center">
 
-<img src="docs/images/hero-canvas.png" alt="A Nautilus canvas full of linked knowledge cards" width="90%"/>
+<img src="docs/images/hero-canvas.png" alt="A Nautilus canvas full of linked knowledge cards" width="100%"/>
 
 *A canvas of knowledge cards, auto-linked by concept similarity*
 
@@ -116,7 +106,7 @@ flowchart TD
         L["User rates links 0–100"] --> M{"N new ratings<br/>since last refit?"}
         M -- "not yet: keep rating" --> L
         M -- "yes (default N = 20)" --> N["NNLS refit<br/></br>min ‖X·w − y‖²  with  w ≥ 0<br/>"]
-        N --> O["The user's weights chnage<br/><br/>(graph shape never changes)"]
+        N --> O["The user's weights chnage<br/><br/>"]
         O -- "next round" --> L
     end
 
@@ -125,7 +115,7 @@ flowchart TD
 
 ### A card has nine fields, not one blob
 
-The LLM returns a card with the text shown to the user (title, summary, bullets, details) **+ nine "linking fields"** that exist purely for comparison. Each field is embedded on its own, and each carries a different weight in the final score:
+The LLM returns a card with the text shown to the user  **+ nine "linking fields"** that exist for comparison. Each field is embedded on its own, and each carries a different weight in the final score.
 
 <div align="center">
 
@@ -149,8 +139,8 @@ The LLM returns a card with the text shown to the user (title, summary, bullets,
 score(A, B)  =  Σ  wᵢ · cos( Aᵢ , Bᵢ )          
 ```
 
-- **Link threshold:** `0.4` — only pairs scoring above it become links. (and only then is the LLM called)
-- **Boundary band:** `0.4 – 0.55` — links in this band are flagged `is_boundary`: they're just strong enough to count as links, but not confidently, so the rating toast prompts the user to rate them.
+- **Link threshold:** `0.4` - only pairs scoring above it become links. (and only then is the LLM called)
+- **Boundary band:** `0.4 – 0.55` - links in this band are flagged `is_boundary`. they are strong enough to count as links, but not confidently, so the rating toast prompts the user to rate them.
 
 ### "Learning" Using NNLS 
 
@@ -163,6 +153,12 @@ X : one row per rating
 y : the ratings, scaled between 0–1
 w : the visitor's personal field weights
 ```
+The learned weights are not used directly. NNLS on a few  ratings often zeroes out several fields. The weights are therefore normalised and added with the defaults:
+
+```text
+alpha   = min(0.8, ratings_at_last_fit / 40)
+w_used  = alpha · w_learned_normalised + (1 - alpha) · w_default
+```
 
 Using `scipy.optimize.nnls`. The result is that visitor's own set of weights, and `GET /links` returns every link re-scored with them (`user_similarity`). Rating the links Nautilus was *least sure about* makes it more eficent.
 
@@ -174,7 +170,7 @@ Using `scipy.optimize.nnls`. The result is that visitor's own set of weights, an
 
 | Layer | Technology | Used for |
 |-------|------------|----------|
-|  **Embeddings** | `sentence-transformers` · `all-MiniLM-L6-v2` (384-d) · PyTorch | One normalised vector per card field, computed locally (uses a GPU automatically if available) |
+|  **Embeddings** | `sentence-transformers` · `all-MiniLM-L6-v2` (384-d) · PyTorch | One normalised vector per card field, computed locally|
 |  **Personalisation** | SciPy · NumPy | Weighted cosine scoring and non-negative least squares (`scipy.optimize.nnls`) to learn each visitor's field weights |
 | **Backend** | Python 3.12 · FastAPI · Uvicorn · Pydantic | REST API, request validation, per-visitor orchestration |
 |  **Database** | PostgreSQL 16 · `pgvector` · `psycopg` 3 (connection pool) | Cards (JSONB), 384-d vectors, links, ratings, learned weights |
@@ -188,7 +184,6 @@ Using `scipy.optimize.nnls`. The result is that visitor's own set of weights, an
 |  **Proxy / TLS** | Caddy 2 | Serves the built SPA, proxies `/api`, automatic HTTPS |
 |  **Containers** | Docker · Docker Compose | Three services: `db`, `backend`, `web` |
 |  **Hosting** | Google Compute Engine (e2-medium) | One-VM production stack |
-|  **CPU-only build** | CPU-only PyTorch  | Lesser cost at small scale|
 
 ---
 
@@ -199,34 +194,27 @@ Using `scipy.optimize.nnls`. The result is that visitor's own set of weights, an
 The backend is where most of the thinking went. These are the decisions that shape it, and *why* each one was made.
 
 ### 1. Nine vectors per card instead of one
-A single embedding of a whole card blends everything together a shared *example* looks the same as a shared *mechanism*. Embedding each field separately lets the system say **"these two match on mechanism and formal structure, but not on applications"**, which is precisely what makes the link explainable and the weights learnable.
-
-### 2. A weighted *linear* score
-The final score is a weighted sum of per-field cosines. Keeping it linear is better (you can read off why two cards matched) also is cheap to compute.
-
-### 3. The LLM is the last step
-Cheap vector maths decides *whether* two cards are related then only is LLM called for pairs that cross the `0.4` threshold, and only to *explain* a connection that already exists. That keeps latency and API cost down, and means the model never invents a link. If the explanation call fails, the link still ships with a fallback label built from the matching field names thus **a bad LLM response never blocks card creation.**
-
-### 4. Local embeddings, baked into the image
-Embeddings run in-process with `all-MiniLM-L6-v2`- 384 dimensions, and fast enough on a CPU-only if no GPU CUDA.
-
-### 5. NNLS for personalisation 
-- **Non-negative** -  A weight can only say "this field matters more or less", never "its *opposite* matters", so the learned weights stay readable.
-
-### 6. Ask for the ratings that teach the most
-Not every rating is equally valuable. Links scoring close to the threshold are the ones the default weights are least sure about, so those are flagged (`is_boundary`) and `GET /links/candidates` serves unrated links ordered by distance from the threshold. It's a small dose of **active learning** fewer ratings needed for a better fit.
+A single embedding blends everything, so a shared example looks the same as a shared mechanism. Per-field vectors make a match explainable and make the weights learnable..
 
 
-### 7. Fundamentals
+### 2. The LLM is the last step
+The cosine similarity decides whether two cards are related. LLM only explains links that alredy exist, this avoids an LLM call for every pair. If the explanation call fails, it falls back to matching field names.
+
+### 3. Local embedding Model
+Embeddings run in-process with `all-MiniLM-L6-v2`- 384 dimensions, lightweight embedding model that can run on a CPU .
+
+### 4. NNLS for personalisation 
+**Non-negative** as a weight can only say "this field matters more or less", never "its *opposite* matters".
+
+
+### 5. Fundamentals
 
 <br/>
 
 | Area | What's in place |
 |------|-----------------|
-| **Storage** | PostgreSQL + pgvector: card payloads as `JSONB`, the nine vectors in a normalised `vector(384)` table. Started on flat JSON files and moved to Postgres ahead of going public. Cosine scoring runs in NumPy, since each comparison combines nine similarities with per-visitor weights |
-| **Integrity** | Canonical link ordering (`CHECK (card_a_id < card_b_id)` + `UNIQUE`). Ratings keep their own snapshot of the field scores and survive card deletion, because they're training data. Clearing a canvas keeps learned weights and settings |
-| **Security** | Least-privilege roles- an owner that runs migrations, and `nautilus_app`, which can't create, alter or drop anything. Migrations are SHA-256 checksummed and guarded by an advisory lock |
-| **Concurrency** | LLM and embedding work run outside any database transaction, then one atomic write stores the card, its nine vectors and its links. A per-visitor lock prevents racing generations, so the backend runs a single Uvicorn worker on purpose |
+| **Storage** | PostgreSQL + pgvector: card payloads as `JSONB`, the nine vectors in a normalised `vector(384)` table. Started on flat JSON files and moved to Postgres ahead of going public. |
+| **Concurrency** | LLM and embedding work run outside any database transaction, then one atomic write stores the card, its nine vectors and its links. A per-visitor lock prevents race conditions. |
 | **Isolation** | Each browser gets a random UUID (`X-Visitor-Id`) and every query is scoped to it. It identifies a browser but doesn't authenticate it, a deliberate trade for a zero-signup demo, with real auth on the roadmap |
 
 
@@ -307,13 +295,9 @@ erDiagram
 
 **Stack:** React 18 · TypeScript · Vite 5 · Tailwind CSS · shadcn/ui (Radix) · `@xyflow/react` v12 · Framer Motion · TanStack Query · React Router · react-markdown + Mermaid · perfect-freehand + roughjs
 
-A quick tour of how it holds together:
+**Node routing.** Every node on the canvas has a `type` string, and a registry maps that string to the React component that draws it.
 
-**Routing.** The app is a single-page workspace. React Router has just two routes — `/` renders the workspace and `*` renders a 404 — because the real "navigation" happens *inside* the canvas. Production serves it with an SPA fallback (unknown paths → `index.html`), so deep links never 404 at the server.
-
-**Node routing.** Every node on the canvas has a `type` string, and a registry maps that string to the React component that draws it:
-
-**Link routing.** When `/generate-card` returns, the frontend builds a `backendId → nodeId` map of what's on the current canvas and turns each returned link into an edge , but only if the card on the other end is actually on this canvas. Each edge is a custom bezier edge that carries its label, explanation, confidence and link id. Nodes expose four-sided connection handles, and when several edges join the same pair of nodes a small hook (`useEdgeParallelism`) groups them and fans the curves and labels apart so they never stack on top of each other.
+**Link routing.** When `/generate-card` returns, the frontend builds a `backendId → nodeId` map of what's on the current canvas and turns each returned link into an edge , but only if the card on the other end is actually on this canvas. Each edge is a custom bezier edge that carries its label, explanation, and link id. Nodes expose four-sided connection handles, and when several edges join the same pair of nodes a small hook (`useEdgeParallelism`) groups them and fans the curves and labels apart so they never stack on top of each other.
 
 **State & persistence.** One React-context store (`CanvasStoreProvider`) owns nodes, edges and every canvas action. The *knowledge* (cards, links, ratings, weights) lives in Postgres; the *layout* (positions, edges, your list of canvases, theme) is saved per canvas in the browser's `localStorage` with a debounced auto-save and flushed on switch and unload. The visitor ID lives there too.
 
@@ -342,27 +326,30 @@ Nautilus/
 ├── DEPLOY.md                      # VM deployment notes
 └── .env.example
 ```
-
 ---
+## Running locally
 
-## Future Scope
+Requires Docker and a [Groq API key](https://console.groq.com).(The bakend uses the Groq library)
 
-### Backend
+```bash
+git clone https://github.com/Tanay-s5/Nautilus.git
+cd Nautilus
 
-- [ ] **Scale the search.** Scoring is currently O(n) over a visitor's cards in NumPy move candidate retrieval into pgvector with **HNSW indexes** once graphs get large
-- [ ] **A re-ranking stage.** Use a cross-encoder to re-rank only the top candidates as too slow to be the main filter, ideal as a second opinion.
-- [ ] **Contrastive fine-tuning.** Fine-tune the embedding model on users' labelled link pairs, so the vectors themselves learn what "related" means
-- [ ] **Calibration validation harness.** Automated checks that learned weights stay non-negative, don't collapse onto one dominant field, move in intuitive directions, and never change topology
-- [ ] **Async generation.** Move LLM calls to a background queue and stream card progress to the UI instead of blocking the request
+# Create .env with your key and two database passwords
+cat > .env << 'ENVEOF'
+GROQ_API_KEY=your_groq_key
+POSTGRES_PASSWORD=pass1
+APP_DB_PASSWORD=pass2
+ENVEOF
 
-### Frontend
+docker compose up --build
+```
 
-- [ ] **Cross-canvas links.** The backend already scores a card against *all* of a visitor's cards
-- [ ] **Similarity-based smart layout.** Cards arrange themselves by meaning: related cards cluster together, and the more similar two cards are, the closer they sit. Links are drawn dynamically, both inside a cluster and between clusters, but only on demand- an edge appears when similarity is more than adjustable threshold, so dense graphs stay readable.
-- [ ] **See your weights.** A visual panel (radar chart) showing how your personal weights differ from the defaults
-- [ ] **Search, minimap and clustering** for large canvases
-- [ ] **Touch and mobile polish**, plus full keyboard accessibility
-- [ ] **Collaborative canvases** shared between people in real time
+| Service | URL |
+|---------|-----|
+| App | http://localhost:8080 |
+| API health check | http://localhost:8000/ping |
+| Database UI (Adminer) | http://localhost:8081 |
 
 
 ---
